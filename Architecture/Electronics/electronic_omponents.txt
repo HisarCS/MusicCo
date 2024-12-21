@@ -1,0 +1,8 @@
+ESP 32 x 1
+Digital touch sensor x 13
+7.0 Inch ESP32 HMI Ekran 800*480 SPI TFT LCD Kapasitif Dokunmatik Ekran x 1
+Vibration motor x 13
+Square Push Buttons x 4
+RGB Led x 13
+Visaton SC 4.7 ND 4 OHM Hoparlör Driver Ünitesi, Oval, 4Ω, 2W x 2
+WS2812B LED Strip
