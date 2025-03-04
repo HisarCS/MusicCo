@@ -1,4 +1,4 @@
-# slide.py - Game logic for the SlidePlay music game
+# game.py - Game logic for the SlidePlay music game
 
 import pygame
 import time
@@ -39,6 +39,14 @@ class SlidePlayGame:
         self.note_colors = calculate_note_colors()
         self.key_display = {note: key for key, note in KEY_MAPPINGS.items()}
 
+    def calculate_pan(self, note_name, octave):
+        """Calculate pan value based on note pitch"""
+        if self.octave_range > 1:
+            return 0.1 + 0.8 * ((octave - self.min_octave) / self.octave_range)
+        else:
+            note_index = list(FREQS.keys()).index(note_name)
+            return 0.1 + 0.8 * (note_index / (len(FREQS) - 1))
+
     def process_key_event(self, event, current_time):
         """Process a key press event during gameplay"""
         if event.key in KEY_MAPPINGS:
@@ -53,7 +61,7 @@ class SlidePlayGame:
                 closest_note, distance = min(active_notes, key=lambda x: x[1])
                 self.active_note_info = f"{closest_note['Note']}, {distance}px from threshold"
                 
-                # Check if the correct note was played (ignoring octave)
+                # Check if the correct note was played (ignore octave for now)
                 if closest_note['Note'] == played_note:
                     # Correct note!
                     octave = closest_note['Octave']
@@ -61,11 +69,7 @@ class SlidePlayGame:
                     volume = closest_note['Volume']
                     
                     # Calculate panning
-                    if self.octave_range > 1:
-                        pan = 0.1 + 0.8 * ((octave - self.min_octave) / self.octave_range)
-                    else:
-                        note_index = list(FREQS.keys()).index(played_note)
-                        pan = 0.1 + 0.8 * (note_index / (len(FREQS) - 1))
+                    pan = self.calculate_pan(played_note, octave)
                     
                     play_note(played_note, octave, duration, volume, pan)
                     closest_note['played'] = True
@@ -80,20 +84,65 @@ class SlidePlayGame:
                 self.active_note_info = "No notes near threshold"
                 play_error_sound()
                 self.wrong_notes += 1
+    
+    def show_instructions(self, wait_time=3):
+        """Show instructions for a specified time"""
+        instruction_end_time = time.time() + wait_time
+        instruction_box = pygame.Rect(WIDTH//4, HEIGHT//4, WIDTH//2, HEIGHT//2)
         
-        # Allow ESC to exit
-        if event.key == pygame.K_ESCAPE:
-            return False
+        while time.time() < instruction_end_time:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+                    return True
+            
+            self.screen.fill(BG_COLOR)
+            draw_instruction_screen(
+                self.screen, self.font, self.small_font,
+                self.key_display, self.note_colors, instruction_box
+            )
+            
+            # Add "Press SPACE to skip" text
+            skip_text = self.small_font.render("Press SPACE to skip", True, (200, 200, 200))
+            self.screen.blit(skip_text, (WIDTH//2 - 80, HEIGHT//4 + HEIGHT//2 - 30))
+            
+            pygame.display.flip()
+            self.clock.tick(60)
         
         return True
-
-    def run(self):
-        """Run the main game loop"""
-        # Show instructions for 3 seconds before starting
-        show_instructions = True
-        instruction_end_time = time.time() + 3
+    
+    def show_game_over(self, wait_time=5):
+        """Show game over screen for a specified time"""
+        end_time = time.time() + wait_time
         
-        # Start game time
+        while time.time() < end_time:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    return
+            
+            draw_game_over_screen(
+                self.screen, self.font,
+                self.score, self.max_score,
+                self.correct_hits, self.missed_notes, self.wrong_notes
+            )
+            
+            # Add "Press ESC to exit" text
+            exit_text = self.small_font.render("Press ESC to exit", True, (200, 200, 200))
+            self.screen.blit(exit_text, (WIDTH//2 - 70, HEIGHT//2 + 100))
+            
+            pygame.display.flip()
+            self.clock.tick(60)
+    
+    def run(self):
+        """Main game loop"""
+        # Show instructions
+        if not self.show_instructions():
+            return
+        
+        # Start the game
         start_time = time.time()
         running = True
         
@@ -107,27 +156,11 @@ class SlidePlayGame:
                     break
                 
                 if event.type == pygame.KEYDOWN:
-                    if show_instructions:
-                        show_instructions = False
-                        start_time = time.time()  # Reset time after instructions
+                    if event.key == pygame.K_ESCAPE:
+                        running = False
+                        break
                     else:
-                        running = self.process_key_event(event, current_time)
-            
-            # Show instructions if needed
-            if show_instructions:
-                if time.time() < instruction_end_time:
-                    self.screen.fill(BG_COLOR)
-                    instruction_box = pygame.Rect(WIDTH//4, HEIGHT//4, WIDTH//2, HEIGHT//2)
-                    draw_instruction_screen(
-                        self.screen, self.font, self.small_font, 
-                        self.key_display, self.note_colors, instruction_box
-                    )
-                    pygame.display.flip()
-                    self.clock.tick(60)
-                    continue
-                else:
-                    show_instructions = False
-                    start_time = time.time()  # Reset time after instructions
+                        self.process_key_event(event, current_time)
             
             # Get visible notes and update missed notes
             visible_notes = get_visible_notes(self.song_data, current_time)
@@ -135,22 +168,23 @@ class SlidePlayGame:
             
             # Draw game screen
             draw_game_screen(
-                self.screen, self.font, self.small_font, self.key_display,
-                self.note_colors, current_time, visible_notes, 
-                self.score, self.max_score, self.correct_hits, 
-                self.missed_notes, self.wrong_notes,
+                self.screen, self.font, self.small_font,
+                self.key_display, self.note_colors, current_time,
+                visible_notes, self.score, self.max_score,
+                self.correct_hits, self.missed_notes, self.wrong_notes,
                 self.last_key_pressed, self.active_note_info
             )
             
             pygame.display.flip()
             self.clock.tick(60)
             
-            # End if all notes have been played/missed and sufficient time has elapsed
+            # Check for game end
             all_notes_handled = all(note['played'] or note['missed'] for note in self.song_data)
             if all_notes_handled and current_time > self.last_note_time + 2:
-                # Show final score
-                self.show_game_over_screen()
                 running = False
+        
+        # Show the final score
+        self.show_game_over()
         
         pygame.quit()
 
