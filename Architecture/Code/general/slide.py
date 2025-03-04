@@ -1,4 +1,4 @@
-# slide.py - Enhanced game logic for the SlidePlay music game
+# slide.py - Enhanced game logic for the SlidePlay music game with beat accuracy
 
 import pygame
 import time
@@ -41,6 +41,12 @@ class SlidePlayGame:
         
         # Track accuracy stats
         self.note_accuracy = {}  # Dictionary to store accuracy for each note type
+        
+        # Beat accuracy tracking
+        self.beat_accuracy_total = 0  # Total percentage accuracy of all notes
+        self.beat_accuracy_count = 0  # Number of notes with beat accuracy measured
+        self.currently_playing = {}  # Track currently pressed keys and their start times
+        self.key_to_note_map = {}  # Map keys to active notes they're playing
 
     def calculate_pan(self, note_name, octave):
         """Calculate pan value based on note pitch"""
@@ -52,9 +58,15 @@ class SlidePlayGame:
 
     def process_key_event(self, event, current_time):
         """Process a key press event during gameplay"""
-        if event.key in KEY_MAPPINGS:
+        if event.type == pygame.KEYDOWN and event.key in KEY_MAPPINGS:
             played_note = KEY_MAPPINGS[event.key]
             self.last_key_pressed = played_note
+            
+            # Mark the time this key was pressed
+            self.currently_playing[event.key] = {
+                'start_time': current_time,
+                'note': played_note
+            }
             
             # Find notes near the threshold
             active_notes = find_active_notes(self.song_data, current_time)
@@ -78,6 +90,13 @@ class SlidePlayGame:
                     closest_note['played'] = True
                     self.score += 1
                     self.correct_hits += 1
+                    
+                    # Map this key to the note for beat accuracy tracking
+                    self.key_to_note_map[event.key] = closest_note
+                    # Initialize beat accuracy for this note
+                    closest_note['expected_duration'] = duration
+                    closest_note['actual_duration'] = 0  # Will be updated on key release
+                    closest_note['beat_accuracy'] = 0    # Will be calculated on key release
                     
                     # Update accuracy stats for this note
                     if played_note not in self.note_accuracy:
@@ -103,7 +122,45 @@ class SlidePlayGame:
                 if played_note not in self.note_accuracy:
                     self.note_accuracy[played_note] = {'correct': 0, 'wrong': 0}
                 self.note_accuracy[played_note]['wrong'] += 1
+        
+        elif event.type == pygame.KEYUP and event.key in KEY_MAPPINGS:
+            # Key release - calculate beat accuracy if this key was playing a note
+            if event.key in self.currently_playing:
+                press_data = self.currently_playing[event.key]
+                press_duration = current_time - press_data['start_time']
+                
+                # If this key was mapped to a note, calculate beat accuracy
+                if event.key in self.key_to_note_map:
+                    note = self.key_to_note_map[event.key]
+                    expected_duration = note['expected_duration']
+                    
+                    # Calculate accuracy as a percentage (how close to the expected duration)
+                    # If held longer than expected, still count as 100%
+                    if press_duration >= expected_duration:
+                        accuracy = 100.0
+                    else:
+                        accuracy = (press_duration / expected_duration) * 100.0
+                    
+                    # Update the note data with beat accuracy info
+                    note['actual_duration'] = press_duration
+                    note['beat_accuracy'] = accuracy
+                    
+                    # Update overall beat accuracy stats
+                    self.beat_accuracy_total += accuracy
+                    self.beat_accuracy_count += 1
+                    
+                    # Clean up tracking dictionaries
+                    del self.key_to_note_map[event.key]
+                
+                # Remove from currently playing
+                del self.currently_playing[event.key]
     
+    def get_beat_accuracy(self):
+        """Get the average beat accuracy percentage"""
+        if self.beat_accuracy_count > 0:
+            return self.beat_accuracy_total / self.beat_accuracy_count
+        return 0.0
+        
     def show_instructions(self, wait_time=3):
         """Show instructions for a specified time"""
         instruction_end_time = time.time() + wait_time
@@ -146,7 +203,8 @@ class SlidePlayGame:
                 self.screen, self.font, self.small_font,
                 self.score, self.max_score,
                 self.correct_hits, self.missed_notes, self.wrong_notes,
-                self.song_data  # Pass the song data for the note summary
+                self.song_data,  # Pass the song data for the note summary
+                self.get_beat_accuracy()  # Pass the beat accuracy
             )
             
             # Add "Press ESC to exit" text
@@ -179,8 +237,9 @@ class SlidePlayGame:
                     if event.key == pygame.K_ESCAPE:
                         running = False
                         break
-                    else:
-                        self.process_key_event(event, current_time)
+                
+                # Process both keydown and keyup events for beat accuracy
+                self.process_key_event(event, current_time)
             
             # Get visible notes and update missed notes
             visible_notes = get_visible_notes(self.song_data, current_time)
@@ -192,7 +251,8 @@ class SlidePlayGame:
                 self.key_display, self.note_colors, current_time,
                 visible_notes, self.score, self.max_score,
                 self.correct_hits, self.missed_notes, self.wrong_notes,
-                self.last_key_pressed, self.active_note_info
+                self.last_key_pressed, self.active_note_info,
+                self.get_beat_accuracy()  # Pass beat accuracy to display
             )
             
             pygame.display.flip()
@@ -218,7 +278,8 @@ class SlidePlayGame:
                 self.screen, self.font, self.small_font,
                 self.score, self.max_score, 
                 self.correct_hits, self.missed_notes, self.wrong_notes,
-                self.song_data  # Pass the song data for the note summary
+                self.song_data,  # Pass the song data for the note summary
+                self.get_beat_accuracy()  # Pass the beat accuracy
             )
             
             for event in pygame.event.get():
