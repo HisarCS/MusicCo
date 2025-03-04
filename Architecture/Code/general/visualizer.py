@@ -1,4 +1,4 @@
-# visualizer.py - Visualization components for the music game
+# visualizer.py - Enhanced visualization components for the music game
 
 import pygame
 import time
@@ -35,9 +35,10 @@ def prepare_song_data(song_data):
         travel_time = (WIDTH - THRESHOLD_X) / NOTE_SPEED
         # When the note should first appear on screen
         note['appear_time'] = note['Start Time'] - travel_time
-        # Track if the note has been played/missed
+        # Track if the note has been played/missed/wrong
         note['played'] = False
         note['missed'] = False
+        note['wrong'] = False  # Add property to track wrong key presses
     return song_data
 
 def get_visible_notes(song_data, current_time):
@@ -53,7 +54,7 @@ def update_missed_notes(visible_notes, current_time, missed_notes_count):
         note_width = int(note['Duration'] * NOTE_SPEED)
         
         # Check if note was missed (passed threshold without being played)
-        if not note['played'] and not note['missed'] and (x_pos + note_width < THRESHOLD_X - 40):
+        if not note['played'] and not note['missed'] and not note['wrong'] and (x_pos + note_width < THRESHOLD_X - 40):
             note['missed'] = True
             missed_notes_count += 1
     
@@ -112,6 +113,8 @@ def draw_game_screen(screen, font, small_font, key_display, note_colors, current
                 color = (0, 255, 0)  # Green for hit notes
             elif note_data['missed']:
                 color = (255, 0, 0)  # Red for missed notes
+            elif note_data.get('wrong', False):
+                color = (255, 0, 0)  # Also red for wrong notes
             else:
                 color = note_colors[note_name]
             
@@ -130,6 +133,12 @@ def draw_game_screen(screen, font, small_font, key_display, note_colors, current
     stats_text = small_font.render(f"Hits: {correct_hits} | Missed: {missed_notes} | Wrong: {wrong_notes}", True, TEXT_COLOR)
     screen.blit(stats_text, (WIDTH - 300, 40))
     
+    # Calculate and display accuracy
+    total_attempted = correct_hits + wrong_notes + missed_notes
+    accuracy = (correct_hits / total_attempted * 100) if total_attempted > 0 else 0
+    accuracy_text = small_font.render(f"Accuracy: {accuracy:.1f}%", True, TEXT_COLOR)
+    screen.blit(accuracy_text, (WIDTH - 200, 70))  # Display below the score and stats
+    
     # Display current time
     time_text = small_font.render(f"Time: {current_time:.2f}s", True, TEXT_COLOR)
     screen.blit(time_text, (10, 10))
@@ -139,8 +148,55 @@ def draw_game_screen(screen, font, small_font, key_display, note_colors, current
         debug_text = small_font.render(f"Last key: {last_key_pressed} | Active note: {active_note_info}", True, (200, 200, 100))
         screen.blit(debug_text, (10, HEIGHT - 20))
 
-def draw_game_over_screen(screen, font, score, max_score, correct_hits, missed_notes, wrong_notes):
-    """Draw the game over screen with final score"""
+def draw_note_summary(screen, song_data, width, height, font):
+    """Draw a summary of all notes as colored circles in a line"""
+    # Set up dimensions and positioning
+    circle_radius = 10
+    circle_spacing = 25
+    line_y = height // 2 + 130  # Position below the final score display
+    
+    # Calculate total width needed for all circles
+    total_width = min(width - 100, len(song_data) * circle_spacing)
+    start_x = (width - total_width) // 2
+    
+    # Draw a line to place the circles on
+    pygame.draw.line(screen, (150, 150, 150), (start_x, line_y), (start_x + total_width, line_y), 2)
+    
+    # Draw a circle for each note
+    for i, note in enumerate(song_data):
+        x_pos = start_x + (i * total_width // max(1, len(song_data) - 1)) if len(song_data) > 1 else start_x + total_width // 2
+        
+        # Determine color based on note status
+        if note['played']:
+            color = (0, 255, 0)  # Green for correctly hit notes
+        elif note['missed'] or note.get('wrong', False):
+            color = (255, 0, 0)  # Red for missed or wrong notes
+        else:
+            color = (150, 150, 150)  # Gray for unplayed notes
+        
+        # Draw the circle
+        pygame.draw.circle(screen, color, (x_pos, line_y), circle_radius)
+        
+        # Add a small note label below each circle
+        note_label = font.render(f"{note['Note']}", True, (200, 200, 200))
+        note_label_rect = note_label.get_rect(center=(x_pos, line_y + 20))
+        screen.blit(note_label, note_label_rect)
+    
+    # Add a legend
+    legend_y = line_y + 40
+    
+    # Correct notes (green)
+    pygame.draw.circle(screen, (0, 255, 0), (start_x, legend_y), circle_radius)
+    correct_text = font.render("Correct", True, TEXT_COLOR)
+    screen.blit(correct_text, (start_x + 20, legend_y - 10))
+    
+    # Wrong/Missed notes (red)
+    pygame.draw.circle(screen, (255, 0, 0), (start_x + 120, legend_y), circle_radius)
+    missed_text = font.render("Wrong/Missed", True, TEXT_COLOR)
+    screen.blit(missed_text, (start_x + 140, legend_y - 10))
+
+def draw_game_over_screen(screen, font, small_font, score, max_score, correct_hits, missed_notes, wrong_notes, song_data):
+    """Draw the game over screen with final score and note summary"""
     screen.fill(BG_COLOR)
     
     title = font.render("Game Over!", True, TEXT_COLOR)
@@ -152,16 +208,19 @@ def draw_game_over_screen(screen, font, score, max_score, correct_hits, missed_n
     stats = font.render(f"Correct: {correct_hits} | Missed: {missed_notes} | Wrong: {wrong_notes}", True, TEXT_COLOR)
     screen.blit(stats, (WIDTH//2 - 200, HEIGHT//2))
     
-    percentage = int((score / max_score) * 100) if max_score > 0 else 0
+    percentage = int((score / max_score * 100)) if max_score > 0 else 0
     grade = "A+" if percentage >= 95 else "A" if percentage >= 90 else "B" if percentage >= 80 else "C" if percentage >= 70 else "D" if percentage >= 60 else "F"
     result = font.render(f"Grade: {grade} ({percentage}%)", True, TEXT_COLOR)
     screen.blit(result, (WIDTH//2 - 80, HEIGHT//2 + 50))
+    
+    # Draw the note summary
+    draw_note_summary(screen, song_data, WIDTH, HEIGHT, small_font)
 
 def find_active_notes(song_data, current_time, threshold_distance=40):
     """Find notes near the threshold line"""
     active_notes = []
     for note in song_data:
-        if note['played'] or note['missed']:
+        if note['played'] or note['missed'] or note.get('wrong', False):
             continue
         
         # Calculate note position
