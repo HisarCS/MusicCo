@@ -1,4 +1,4 @@
-# game.py - Game logic for the SlidePlay music game
+# slide.py - Enhanced game logic for the SlidePlay music game
 
 import pygame
 import time
@@ -38,6 +38,9 @@ class SlidePlayGame:
         self.screen, self.font, self.small_font, self.clock = init_pygame_window()
         self.note_colors = calculate_note_colors()
         self.key_display = {note: key for key, note in KEY_MAPPINGS.items()}
+        
+        # Track accuracy stats
+        self.note_accuracy = {}  # Dictionary to store accuracy for each note type
 
     def calculate_pan(self, note_name, octave):
         """Calculate pan value based on note pitch"""
@@ -75,15 +78,31 @@ class SlidePlayGame:
                     closest_note['played'] = True
                     self.score += 1
                     self.correct_hits += 1
+                    
+                    # Update accuracy stats for this note
+                    if played_note not in self.note_accuracy:
+                        self.note_accuracy[played_note] = {'correct': 0, 'wrong': 0}
+                    self.note_accuracy[played_note]['correct'] += 1
                 else:
                     # Wrong note!
+                    closest_note['wrong'] = True  # Mark the note as wrong
                     play_error_sound()
                     self.wrong_notes += 1
+                    
+                    # Update accuracy stats for the played note
+                    if played_note not in self.note_accuracy:
+                        self.note_accuracy[played_note] = {'correct': 0, 'wrong': 0}
+                    self.note_accuracy[played_note]['wrong'] += 1
             else:
                 # No active notes - wrong timing
                 self.active_note_info = "No notes near threshold"
                 play_error_sound()
                 self.wrong_notes += 1
+                
+                # Update accuracy stats for the played note
+                if played_note not in self.note_accuracy:
+                    self.note_accuracy[played_note] = {'correct': 0, 'wrong': 0}
+                self.note_accuracy[played_note]['wrong'] += 1
     
     def show_instructions(self, wait_time=3):
         """Show instructions for a specified time"""
@@ -112,7 +131,7 @@ class SlidePlayGame:
         
         return True
     
-    def show_game_over(self, wait_time=5):
+    def show_game_over(self, wait_time=8):  # Increased wait time to give more time to view the summary
         """Show game over screen for a specified time"""
         end_time = time.time() + wait_time
         
@@ -124,9 +143,10 @@ class SlidePlayGame:
                     return
             
             draw_game_over_screen(
-                self.screen, self.font,
+                self.screen, self.font, self.small_font,
                 self.score, self.max_score,
-                self.correct_hits, self.missed_notes, self.wrong_notes
+                self.correct_hits, self.missed_notes, self.wrong_notes,
+                self.song_data  # Pass the song data for the note summary
             )
             
             # Add "Press ESC to exit" text
@@ -179,25 +199,26 @@ class SlidePlayGame:
             self.clock.tick(60)
             
             # Check for game end
-            all_notes_handled = all(note['played'] or note['missed'] for note in self.song_data)
+            all_notes_handled = all(note['played'] or note['missed'] or note.get('wrong', False) for note in self.song_data)
             if all_notes_handled and current_time > self.last_note_time + 2:
                 running = False
         
-        # Show the final score
+        # Show the final score with note summary
         self.show_game_over()
         
         pygame.quit()
 
     def show_game_over_screen(self):
-        """Show the game over screen with final score"""
+        """Show the game over screen with final score and note summary"""
         final_screen = True
         final_start = time.time()
         
-        while final_screen and time.time() - final_start < 5:
+        while final_screen and time.time() - final_start < 8:  # Increased time to view summary
             draw_game_over_screen(
-                self.screen, self.font, 
+                self.screen, self.font, self.small_font,
                 self.score, self.max_score, 
-                self.correct_hits, self.missed_notes, self.wrong_notes
+                self.correct_hits, self.missed_notes, self.wrong_notes,
+                self.song_data  # Pass the song data for the note summary
             )
             
             for event in pygame.event.get():
